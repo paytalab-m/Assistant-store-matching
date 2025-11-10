@@ -1,0 +1,63 @@
+name: 매주 화요일 자동 매칭 실행
+
+on:
+  schedule:
+    - cron: '0 18 * * 1' # KST 화요일 새벽 3시 (UTC 월요일 18시)
+  workflow_dispatch:
+
+jobs:
+  run-matching-script:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1단계: 코드 가져오기
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2단계: Python 3.11 설치
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3단계: Base64 Secret을 .json 파일로 디코딩
+      - name: Decode Google Service Account Key File from Base64
+        run: echo "${{ secrets.GOOGLE_AUTH_SECRET }}" | base64 --decode > ${{ env.SERVICE_ACCOUNT_FILE }}
+        env:
+          SERVICE_ACCOUNT_FILE: msdproject-466902-dd36cca121a8.json
+          
+      # 4.0단계: 파일이 비어있는지 확인 (가장 중요)
+      - name: DEBUG - Check if decoded file is empty
+        run: |
+          echo "--- [디버깅 4.0] Base64로 디코딩된 .json 파일이 비어있는지 확인합니다. ---"
+          if [ -s ${{ env.SERVICE_ACCOUNT_FILE }} ]; then
+            echo "[정상] 파일이 비어있지 않습니다. 4.5단계(JSON 검사)로 넘어갑니다."
+          else
+            echo "!!!! [치명적 오류] !!!! Base64 디코딩 결과, .json 파일이 비어있습니다 (0 byte)."
+            echo "이것은 99% 'GOOGLE_AUTH_SECRET' 값이 비어있거나, 유효한 Base64 문자열이 아니라는 의미입니다."
+            echo "가이드 1단계(PowerShell)와 2단계(Secret 붙여넣기)를 다시 확인해주세요."
+            exit 1 # 여기서 워크플로우 중단
+          fi
+        env:
+          SERVICE_ACCOUNT_FILE: msdproject-466902-dd36cca121a8.json
+
+      # 4.5단계: (이전 4단계) JSON 파일 유효성 검사
+      - name: DEBUG - Validate the created JSON file
+        run: |
+          echo "--- [디버깅 4.5] .json 파일의 문법을 검사합니다. ---"
+          python -m json.tool ${{ env.SERVICE_ACCOUNT_FILE }} > /dev/null
+          echo "[정상] JSON 문법이 유효합니다. 5단계로 넘어갑니다."
+        env:
+          SERVICE_ACCOUNT_FILE: msdproject-466902-dd36cca121a8.json
+
+      # 5단계: Python 라이브러리 설치
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # requirements.txt 파일에 정의된 라이브러리를 설치합니다.
+          pip install -r requirements.txt
+
+      # 6단계: 메인 Python 스크립트 실행
+      - name: Run main matching script
+        # [수정됨] 실행할 파일의 이름을 "양도양수 머니핀 크롤링.py"로 변경 (띄어쓰기 포함)
+        run: python "양도양수 머니핀 크롤링.py"
